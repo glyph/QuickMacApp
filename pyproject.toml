@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools", "autocalver"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "quickapp"
+name = "quickmacapp"
 description = "Make it easier to write Mac apps in Python"
-version = "2023.02.15.1"
+version = "2023.02.15.2"
 dependencies = [
     "pyobjc-framework-Cocoa",
     "pyobjc-framework-ExceptionHandling",
