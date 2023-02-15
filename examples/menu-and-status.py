@@ -4,9 +4,9 @@ import os
 
 import AppKit
 
-from quickapp import quickapp
+from quickmacapp import mainpoint, Status
 
-@quickapp.mainpoint()
+@mainpoint()
 def app(reactor: IReactorTime) -> None:
     AppKit.NSApplication.sharedApplication().setActivationPolicy_(
         AppKit.NSApplicationActivationPolicyRegular
@@ -17,7 +17,7 @@ def app(reactor: IReactorTime) -> None:
     def destroy_sun():
         print("Sun destruction capabalities still not deployed")
 
-    status = quickapp.Status("☀️ 💣")
+    status = Status("☀️ 💣")
     status.menu([("Check sun", check_sun), ("Destroy sun", destroy_sun)])
 
     nib_file = pathlib.Path(__file__).parent / "MainMenu.nib"
