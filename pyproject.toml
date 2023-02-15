@@ -5,7 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "quickmacapp"
 description = "Make it easier to write Mac apps in Python"
-version = "2023.02.15.2"
+readme = "README.rst"
+version = "2023.02.15.3"
 dependencies = [
     "pyobjc-framework-Cocoa",
     "pyobjc-framework-ExceptionHandling",
