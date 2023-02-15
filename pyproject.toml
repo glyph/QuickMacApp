@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools", "autocalver"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quickapp"
+description = "Make it easier to write Mac apps in Python"
+version = "2023.02.15.1"
+dependencies = [
+    "pyobjc-framework-Cocoa",
+    "pyobjc-framework-ExceptionHandling",
+    "pyobjc-framework-UserNotifications",
+    "twisted[tls,macos_platform]",
+]
