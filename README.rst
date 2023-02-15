@@ -2,6 +2,7 @@ QuickMacApp
 ========
 
 .. note::
+
     This is extremely rough and poorly documented at this point.  While its
     public API is quite small to avoid **undue** churn, it may change quite
     rapidly and if you want to use this to ship an app you probably will want
