@@ -1,11 +1,16 @@
+
 import os
 import sys
 import traceback
-from typing import Callable
+from typing import Callable, Protocol, Any
 
-from objc import ivar
+from objc import ivar, IBAction
 
-from Foundation import NSObject
+from Foundation import (
+    NSObject,
+    NSException,
+)
+
 from AppKit import (
     NSApp,
     NSApplication,
@@ -24,15 +29,42 @@ from ExceptionHandling import (  # type:ignore
 
 
 class Actionable(NSObject):
-    def initWithFunction_(self, thunk):
-        self.thunk = thunk
+    """
+    Wrap a Python no-argument function call in an NSObject with a C{doIt:}
+    method.
+    """
+    _thunk: Callable[[], None]
+
+    def initWithFunction_(self, thunk: Callable[[], None]) -> Actionable:
+        """
+        Remember the given callable.
+
+        @param thunk: the callable to run in L{doIt_}.
+        """
+        self._thunk = thunk
         return self
 
-    def doIt_(self, sender):
+    @IBAction
+    def doIt_(self, sender: object) -> None:
+        """
+        Call the given callable; exposed as an C{IBAction} in case you want IB
+        to be able to see it.
+        """
         self.thunk()
 
 
 def menu(title: str, items: list[tuple[str, Callable[[], object]]]) -> NSMenu:
+    """
+    Construct an NSMenu from a list of tuples describing it.
+
+    @note: Since NSMenu's target attribute is a weak reference, the callable
+        objects here are made immortal via an unpaired call to C{retain} on
+        their L{Actionable} wrappers.
+
+    @param items: list of pairs of (menu item's name, click action).
+
+    @return: a new Menu tha is not attached to anything.
+    """
     result = NSMenu.alloc().initWithTitle_(title)
     for (subtitle, thunk) in items:
         item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
@@ -45,15 +77,16 @@ def menu(title: str, items: list[tuple[str, Callable[[], object]]]) -> NSMenu:
 
 
 class Status:
-
     """
     Application status (top menu bar, on right)
-
-    Args:
-        text: String, initial status
     """
 
     def __init__(self, text: str) -> None:
+        """
+        Create a L{Status} with some text to use as its label.
+
+        @param text: The initial label displayed in the menu bar.
+        """
         self.item = NSStatusBar.systemStatusBar().statusItemWithLength_(
             NSVariableStatusItemLength
         )
@@ -63,15 +96,19 @@ class Status:
 
     def menu(self, items: list[tuple[str, Callable[[], object]]]) -> None:
         """
-        Set the status drop-down menu
+        Set the status drop-down menu.
 
-        Args:
-            items: list of pairs of menu item name and callable if it is clicked
+        @param items: list of pairs of (menu item's name, click action).
+
+        @see: L{menu}
         """
         self.item.setMenu_(menu(self.item.title(), items))
 
 
-def fmtPythonException(exception):
+def fmtPythonException(exception: NSException) -> str:
+    """
+    Format an NSException containing a wrapped PyObjC python exception.
+    """
     userInfo = exception.userInfo()
     return "*** Python exception discarded!\n" + "".join(
         traceback.format_exception(
@@ -82,12 +119,17 @@ def fmtPythonException(exception):
     )
 
 
-def fmtObjCException(exception):
+def fmtObjCException(exception: NSException) -> str:
+    """
+    Format an Objective C exception which I{does not} contain a wrapped Python
+    exception.
+
+    @return: our best effort to format the stack trace for the given exception.
+    """
     stacktrace = None
 
     try:
         stacktrace = exception.callStackSymbols()
-
     except AttributeError:
         pass
 
@@ -96,7 +138,7 @@ def fmtObjCException(exception):
         if stack:
             pipe = _run_atos(" ".join(hex(v) for v in stack))
             if pipe is None:
-                return True
+                return "ObjC exception reporting error: cannot run atos"
 
             stacktrace = pipe.readlines()
             stacktrace.reverse()
@@ -106,11 +148,11 @@ def fmtObjCException(exception):
         userInfo = exception.userInfo()
         stack = userInfo.get(NSStackTraceKey)
         if not stack:
-            return True
+            return "ObjC exception reporting error: cannot get stack trace"
 
         pipe = _run_atos(stack)
         if pipe is None:
-            return True
+            return "ObjC exception reporting error: cannot run atos"
 
         stacktrace = pipe.readlines()
         stacktrace.reverse()
@@ -122,19 +164,34 @@ def fmtObjCException(exception):
         + "Stack trace (most recent call last):\n"
         + "\n".join(["  " + line for line in stacktrace])
     )
-    return False
 
 
 class QuickApplication(NSApplication):
+    """
+    QuickMacApp's main application class.
+
+    @ivar keyEquivalentHandler: Set this attribute to a custom L{NSResponder}
+        if you want to handle key equivalents outside the responder chain.  (I
+        believe this is necessary in some apps because the responder chain can
+        be more complicated in LSUIElement apps, but there might be a better
+        way to do this.)
+    """
     keyEquivalentHandler: NSResponder = ivar()
 
     def sendEvent_(self, event: NSEvent) -> None:
+        """
+        Hand off any incoming events to the key equivalent handler.
+        """
         if self.keyEquivalentHandler is not None:
             if self.keyEquivalentHandler.performKeyEquivalent_(event):
                 return
         super().sendEvent_(event)
 
     def reportException_(self, exception):
+        """
+        Override C{[NSApplication reportException:]} to report exceptions more
+        legibly to Python developers.
+        """
         if isPythonException(exception):
             print(fmtPythonException(exception))
         else:
@@ -142,30 +199,39 @@ class QuickApplication(NSApplication):
         sys.stdout.flush()
 
 
-def mainpoint():
+class MainRunner(Protocol):
+    """
+    A function which has been decorated with a runMain attribute.
+    """
+    def __call__(self, reactor: Any) -> None:
+        """
+        @param reactor: A Twisted reactor, which provides the usual suspects of
+            C{IReactorTime}, C{IReactorTCP}, etc.
+        """
+
+    runMain: Callable[[], None]
+
+def mainpoint() -> Callable[[Callable[[Any], None]], MainRunner]:
     """
     Add a .runMain attribute to function
 
-    Returns:
-        A decorator that adds a .runMain attribute
-        to a function
+    @return: A decorator that adds a .runMain attribute to a function.
 
-    The runMain attribute starts a reactor and calls
-    the original function with a running, initialized,
-    reactor.
+        The runMain attribute starts a reactor and calls the original function
+        with a running, initialized, reactor.
     """
-    def wrapup(appmain):
-        def doIt():
+    def wrapup(appmain: Callable[[Any], None]) -> MainRunner:
+        def doIt() -> None:
             from twisted.internet import cfreactor
             import PyObjCTools.AppHelper
 
             QuickApplication.sharedApplication()
 
-            def myRunner():
+            def myRunner() -> None:
                 PyObjCTools.Debugging.installVerboseExceptionHandler()
                 PyObjCTools.AppHelper.runEventLoop()
 
-            def myMain():
+            def myMain() -> None:
                 appmain(reactor)
 
             reactor = cfreactor.install(runner=myRunner)
@@ -173,13 +239,14 @@ def mainpoint():
             reactor.run()
             os._exit(0)
 
-        appmain.runMain = doIt
-        return appmain
+        appMainAsRunner: MainRunner = appmain  # type:ignore[assignment]
+        appMainAsRunner.runMain = doIt
+        return appMainAsRunner
 
     return wrapup
 
 
-def quit():
+def quit() -> None:
     """
     Quit.
     """
