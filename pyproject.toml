@@ -2,6 +2,9 @@
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.package-data]
+"*" = ["py.typed"]
+
 [project]
 name = "quickmacapp"
 description = "Make it easier to write Mac apps in Python"
