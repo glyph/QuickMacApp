@@ -51,7 +51,7 @@ class Actionable(NSObject):
         Call the given callable; exposed as an C{IBAction} in case you want IB
         to be able to see it.
         """
-        self.thunk()
+        self._thunk()
 
 
 def menu(title: str, items: list[tuple[str, Callable[[], object]]]) -> NSMenu:
