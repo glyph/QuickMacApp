@@ -1,7 +1,4 @@
-from contextlib import contextmanager
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Callable, Iterable, Iterator, TypeVar
+from typing import Iterable, Iterator, TypeVar
 
 from AppKit import (
     NSAlertFirstButtonReturn,
@@ -9,27 +6,13 @@ from AppKit import (
     NSAlertThirdButtonReturn,
     NSAlert,
     NSApp,
-    NSNotificationCenter,
 )
 from Foundation import (
-    NSCalendar,
-    NSCalendarUnitDay,
-    NSCalendarUnitHour,
-    NSCalendarUnitMinute,
-    NSCalendarUnitMonth,
-    NSCalendarUnitNanosecond,
-    NSCalendarUnitSecond,
-    NSCalendarUnitYear,
-    NSDate,
-    NSObject,
     NSRunLoop,
     NSTextField,
-    NSView,
     NSRect,
 )
-from quickmacapp import Actionable
 from twisted.internet.defer import Deferred
-from twisted.python.failure import Failure
 
 
 NSModalResponse = int
