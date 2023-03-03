@@ -52,13 +52,13 @@ def _alertReturns() -> Iterator[NSModalResponse]:
         i += 1
 
 
-async def getChoice(title: str, description: str, values: Iterable[tuple[T, str]]) -> T:
+async def choose(values: Iterable[tuple[T, str]], question: str, description: str="") -> T:
     """
-    Allow the user to choose between the given values, on buttons labeled in
+    Prompt the user to choose between the given values, on buttons labeled in
     the given way.
     """
     msg = NSAlert.alloc().init()
-    msg.setMessageText_(title)
+    msg.setMessageText_(question)
     msg.setInformativeText_(description)
     potentialResults = {}
     for (value, label), alertReturn in zip(values, _alertReturns()):
@@ -68,15 +68,15 @@ async def getChoice(title: str, description: str, values: Iterable[tuple[T, str]
     return potentialResults[await asyncModal(msg)]
 
 
-async def getString(title: str, question: str, defaultValue: str) -> str | None:
+async def ask(question: str, description: str="", defaultValue: str="") -> str | None:
     """
-    Prompt the user for some text.
+    Prompt the user for a short string of text.
     """
     msg = NSAlert.alloc().init()
     msg.addButtonWithTitle_("OK")
     msg.addButtonWithTitle_("Cancel")
-    msg.setMessageText_(title)
-    msg.setInformativeText_(question)
+    msg.setMessageText_(question)
+    msg.setInformativeText_(description)
 
     txt = NSTextField.alloc().initWithFrame_(NSRect((0, 0), (200, 100)))
     txt.setMaximumNumberOfLines_(5)
@@ -92,3 +92,16 @@ async def getString(title: str, question: str, defaultValue: str) -> str | None:
         return result
 
     return None
+
+
+async def answer(message: str, description: str="") -> None:
+    """
+    Give the user a message.
+    """
+    msg = NSAlert.alloc().init()
+    msg.setMessageText_(message)
+    msg.setInformativeText_(description)
+    # msg.addButtonWithTitle("OK")
+    msg.layout()
+
+    await asyncModal(msg)
