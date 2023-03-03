@@ -8,19 +8,22 @@ QuickMacApp
     rapidly and if you want to use this to ship an app you probably will want
     to contribute to it as well.
 
-Make it easier to write small applications for macOS (that use Twisted).
+Make it easier to write small applications for macOS in Python, using Twisted.
 
 To get a very basic status menu API:
 
 .. code::
    python
 
-    from quickmacapp import mainpoint, Status, quit
+    from quickmacapp import mainpoint, Status, answer, quit
+    from twisted.internet.defer import Deferred
 
     @mainpoint()
-    def app(reactor: IReactorTime):
-        Status("☀️ 💣").menu([("Do Something", lambda: print("something")),
-                             ("Quit", quit)])
+    def app(reactor):
+        s = Status("☀️ 💣")
+        s.menu([("Do Something", lambda: Deferred.fromCoroutine(answer("something"))),
+                ("Quit", quit)])
+    app.runMain()
 
 Packaging this into a working app bundle is currently left as an exercise for
 the reader.

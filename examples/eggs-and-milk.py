@@ -9,7 +9,7 @@ from twisted.internet.interfaces import IReactorTime
 from twisted.internet.defer import Deferred
 from twisted.python.failure import Failure
 
-from quickmacapp import mainpoint, Status, ask, choose, answer
+from quickmacapp import mainpoint, Status, ask, choose, answer, quit
 
 resultTemplate = """
 You need to go to the store to get more eggs in {eggDays} days
@@ -83,7 +83,7 @@ def app(reactor: IReactorTime) -> None:
                 "Calculate Eggs And Milk",
                 lambda: Deferred.fromCoroutine(eggsAndMilkMinder()),
             ),
-            ("Quit", lambda: app.terminate_(None)),
+            ("Quit", quit),
         ]
     )
 
