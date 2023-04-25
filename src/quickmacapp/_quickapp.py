@@ -5,7 +5,7 @@ import sys
 import traceback
 from typing import Callable, Protocol, Any
 
-from objc import ivar, IBAction
+from objc import ivar, IBAction, super
 
 from Foundation import (
     NSObject,
