@@ -6,10 +6,12 @@ from AppKit import (
     NSAlertThirdButtonReturn,
     NSAlert,
     NSApp,
+    NSTextField,
+    NSSecureTextField,
+    NSCenterTextAlignment,
 )
 from Foundation import (
     NSRunLoop,
-    NSTextField,
     NSRect,
 )
 from twisted.internet.defer import Deferred
@@ -68,7 +70,25 @@ async def choose(values: Iterable[tuple[T, str]], question: str, description: st
     return potentialResults[await asyncModal(msg)]
 
 
-async def ask(question: str, description: str="", defaultValue: str="") -> str | None:
+async def getpass(question: str, description: str="") -> str | None:
+    # set a sample value to get a reasonable visual width
+    txt = NSSecureTextField.textFieldWithString_("testing " * 4)
+    # clear it out because of course we don't want to use that value
+    txt.setStringValue_("")
+    txt.setAlignment_(NSCenterTextAlignment)
+    txt.setMaximumNumberOfLines_(5)
+    return await _ask(question, description, txt)
+
+
+async def ask(question: str, description: str="", defaultValue: str=""):
+    # TODO: version of this with a NSSecureTextField for entering passwords
+    txt = NSTextField.alloc().initWithFrame_(NSRect((0, 0), (200, 100)))
+    txt.setMaximumNumberOfLines_(5)
+    txt.setStringValue_(defaultValue)
+    return await _ask(question, description, txt)
+
+
+async def _ask(question: str, description: str, txt: NSTextField) -> str | None:
     """
     Prompt the user for a short string of text.
     """
@@ -78,9 +98,6 @@ async def ask(question: str, description: str="", defaultValue: str="") -> str |
     msg.setMessageText_(question)
     msg.setInformativeText_(description)
 
-    txt = NSTextField.alloc().initWithFrame_(NSRect((0, 0), (200, 100)))
-    txt.setMaximumNumberOfLines_(5)
-    txt.setStringValue_(defaultValue)
     msg.setAccessoryView_(txt)
     msg.window().setInitialFirstResponder_(txt)
     msg.layout()
