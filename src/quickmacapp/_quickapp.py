@@ -96,7 +96,8 @@ class Status:
         if image is not None:
             self.item.button().setImage_(image)
         elif text is None:
-            text = "QuickMacApp"
+            from __main__ import __file__ as default
+            text = os.path.basename(default)
         if text is not None:
             self.item.button().setTitle_(text)
 
