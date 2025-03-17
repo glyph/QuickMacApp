@@ -91,9 +91,8 @@ class Status:
         self.item = NSStatusBar.systemStatusBar().statusItemWithLength_(
             NSVariableStatusItemLength
         )
-        self.item.setTitle_(text)
-        self.item.setEnabled_(True)
-        self.item.setHighlightMode_(True)
+        self.item.button().setTitle_(text)
+        self.item.button().setEnabled_(True)
 
     def menu(self, items: list[tuple[str, Callable[[], object]]]) -> None:
         """
