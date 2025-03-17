@@ -52,13 +52,15 @@ async def eggsAndMilkMinder() -> None:
     )
     await answer(
         (
-            "Then you will need to get some potatoes and grate them,"
-            " also some onions and cook it all so it's delicious"
-        )
-        if hashBrowns
-        else (
-            "Suit yourself, but hashbrowns are delicious,"
-            " you should definitely have them sometime"
+            (
+                "Then you will need to get some potatoes and grate them,"
+                " also some onions and cook it all so it's delicious"
+            )
+            if hashBrowns
+            else (
+                "Suit yourself, but hashbrowns are delicious,"
+                " you should definitely have them sometime"
+            )
         ),
     )
 
@@ -67,7 +69,11 @@ async def eggsAndMilkMinder() -> None:
 def app(reactor: IReactorTime) -> None:
     app = AppKit.NSApplication.sharedApplication()
     app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
-    status = Status("🥚🥛")
+    status = Status(
+        image=AppKit.NSImage.alloc().initByReferencingFile_(
+            str(pathlib.Path(__file__).parent / "eggs.png")
+        ),
+    )
     status.menu(
         [
             (

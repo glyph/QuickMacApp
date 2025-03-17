@@ -18,6 +18,7 @@ from AppKit import (
     NSEvent,
     NSResponder,
     NSMenu,
+    NSImage,
     NSMenuItem,
     NSStatusBar,
     NSVariableStatusItemLength,
@@ -82,7 +83,7 @@ class Status:
     Application status (top menu bar, on right)
     """
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str | None = None, image: NSImage | None = None) -> None:
         """
         Create a L{Status} with some text to use as its label.
 
@@ -91,8 +92,13 @@ class Status:
         self.item = NSStatusBar.systemStatusBar().statusItemWithLength_(
             NSVariableStatusItemLength
         )
-        self.item.button().setTitle_(text)
         self.item.button().setEnabled_(True)
+        if image is not None:
+            self.item.button().setImage_(image)
+        elif text is None:
+            text = "QuickMacApp"
+        if text is not None:
+            self.item.button().setTitle_(text)
 
     def menu(self, items: list[tuple[str, Callable[[], object]]]) -> None:
         """
