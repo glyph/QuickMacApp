@@ -9,13 +9,17 @@ from Foundation import NSError, NSLog, NSObject
 from objc import object_property
 from twisted.internet.defer import Deferred
 from UserNotifications import (
+    UNTextInputNotificationResponse,
+    UNNotificationRequest,
+    UNNotificationTrigger,
     UNAuthorizationOptionNone,
     UNNotificationAction,
+    UNMutableNotificationContent,
     UNNotificationActionOptionAuthenticationRequired,
     UNNotificationActionOptionDestructive,
     UNNotificationActionOptionForeground,
     UNNotificationCategory,
-    UNNotificationCenterPresentationOptions,
+    UNNotificationPresentationOptions,
     UNNotificationPresentationOptionBanner,
     UNNotificationCategoryOptionAllowInCarPlay,
     UNNotificationCategoryOptionCustomDismissAction,
@@ -25,6 +29,7 @@ from UserNotifications import (
     UNTextInputNotificationAction,
     UNUserNotificationCenter,
     UNNotification,
+    UNNotificationResponse,
 )
 
 
@@ -96,10 +101,23 @@ class AppNotificationsDelegateWrapper(NSObject):
         self,
         notificationCenter: UNUserNotificationCenter,
         notification: UNNotification,
-        completionHandler: Callable[[UNNotificationCenterPresentationOptions], None],
+        completionHandler: Callable[[UNNotificationPresentationOptions], None],
     ) -> None:
+        # TODO: allow for client code to customize this
         completionHandler(UNNotificationPresentationOptionBanner)
 
+    def userNotificationCenter_didReceiveNotificationResponse_withCompletionHandler_(
+        self,
+        notificationCenter: UNUserNotificationCenter,
+        notificationResponse: UNNotificationResponse,
+        completionHandler: Callable[[], None],
+    ) -> None:
+        """
+        We received a response to a notification.
+        """
+        if isinstance(notificationResponse, UNTextInputNotificationResponse):
+            pass
+        completionHandler()
 
 
 @dataclass
@@ -114,7 +132,34 @@ class AppNotificationsCategory:
     identifier: str
     actions: Sequence[tuple[AppNotificationsAction, Callable[[str], Awaitable[None]]]]
     intentIdentifiers: Sequence[str]
+    _manager: AppNotificationsManager
     _unNotificationCategory: UNNotificationCategory
+
+    async def _notifyWithTrigger(
+        self, trigger: UNNotificationTrigger, identifier: str, title: str, body: str
+    ) -> None:
+
+        content = UNMutableNotificationContent.alloc().init()
+        content.setTitle_(title)
+        content.setBody_(body)
+        content.setCategoryIdentifier_(self.identifier)
+
+        request = UNNotificationRequest.requestWithIdentifier_content_trigger_(
+            identifier,
+            content,
+            trigger,
+        )
+        d: Deferred[None] = Deferred()
+
+        def notificationRequestCompleted(error: NSError | None) -> None:
+            # TODO: translate errors
+            NSLog("completed notification request with error %@", error)
+            d.callback(None)
+
+        self._manager._center.addNotificationRequest_withCompletionHandler_(
+            request, notificationRequestCompleted
+        )
+        await d
 
 
 @dataclass
@@ -213,6 +258,7 @@ class AppNotificationsManager:
                     intentIdentifiers,
                     options,
                 ),
+                _manager=self,
             )
         )
         return result
@@ -241,10 +287,17 @@ async def setupNotificationsExample() -> None:
         # structure like...
 
         async def action1category1(notificationIdentifier: str) -> None:
-            pass
+            """
+            This callback executes when the user presses the action1 button on
+            a category1 notification.
+            """
 
         async def action1activated(notificationIdentifier: str) -> None:
-            pass
+            """
+            This callback executes when the user clicks on a category1
+            notification to activate the application, without selecting an
+            action.
+            """
 
         n.category(
             identifier="category1",
