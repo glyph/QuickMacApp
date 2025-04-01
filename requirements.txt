@@ -32,6 +32,8 @@ cryptography==44.0.2
     #   twisted
 cython-test-exception-raiser==1.0.2
     # via twisted
+datetype==2025.2.13
+    # via quickmacapp (pyproject.toml)
 h11==0.14.0
     # via httpcore
 h2==4.2.0

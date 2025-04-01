@@ -14,5 +14,6 @@ dependencies = [
     "pyobjc-framework-Cocoa",
     "pyobjc-framework-ExceptionHandling",
     "pyobjc-framework-UserNotifications",
+    "datetype",
     "twisted[tls,macos_platform]",
 ]
