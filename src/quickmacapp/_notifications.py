@@ -5,9 +5,8 @@ from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from types import TracebackType
 from typing import Any, Awaitable, Callable, Protocol
-from datetime import datetime
 
-from datetype import DateTime, aware
+from datetype import DateTime
 
 from Foundation import NSError, NSLog, NSObject, NSDateComponents
 from objc import object_property
@@ -37,7 +36,6 @@ from UserNotifications import (
     UNNotificationTrigger,
     UNCalendarNotificationTrigger,
     UNTextInputNotificationAction,
-    UNTextInputNotificationResponse,
     UNUserNotificationCenter,
 )
 
@@ -51,33 +49,39 @@ class _AppNotificationsCtxBuilder:
         """
         Request authorization, then start building this notifications manager.
         """
+        NSLog("beginning build")
         grantDeferred: Deferred[bool] = Deferred()
 
         def completed(granted: bool, error: NSError | None) -> None:
             # TODO: convert non-None NSErrors into failures on this Deferred
-            NSLog("Requesting notification authorization...")
             grantDeferred.callback(granted)
             NSLog(
                 "Notification authorization response: %@ with error: %@", granted, error
             )
 
+        NSLog("requesting authorization")
         self.center.requestAuthorizationWithOptions_completionHandler_(
-            UNAuthorizationOptionNone, grantDeferred
+            UNAuthorizationOptionNone, completed
         )
+        NSLog("requested")
         granted = await grantDeferred
-        settingsDeferred: Deferred[UNNotificationSettings]
+        settingsDeferred: Deferred[UNNotificationSettings] = Deferred()
 
         def gotSettings(settings: UNNotificationSettings) -> None:
+            NSLog("received notification settings %@", settings)
             settingsDeferred.callback(settings)
 
+        NSLog("requesting notification settings")
         self.center.getNotificationSettingsWithCompletionHandler_(gotSettings)
         settings = await settingsDeferred
+        NSLog("initializing config")
         self.cfg = NotificationConfig(
             self.center,
             [],
             _wasGrantedPermission=granted,
             _settings=settings,
         )
+        NSLog("done!")
         return self.cfg
 
     async def __aexit__(
@@ -87,19 +91,24 @@ class _AppNotificationsCtxBuilder:
         traceback: TracebackType | None,
         /,
     ) -> bool:
+        NSLog("async exit from ctx manager")
         if traceback is None and self.cfg is not None:
-            self.center.setDelegate_(
-                _QMANotificationDelegateWrapper.alloc().initWithConfig_(self.cfg)
-            )
+            qmandw = _QMANotificationDelegateWrapper.alloc().initWithConfig_(self.cfg)
+            qmandw.retain()
+            NSLog("Setting delegate! %@", qmandw)
+            self.center.setDelegate_(qmandw)
             self.cfg._register()
+        else:
+            NSLog("NOT setting delegate!!!")
         return False
 
 
 class _QMANotificationDelegateWrapper(NSObject):
     config: NotificationConfig = object_property()
 
-    def initWithConfig_(self, cfg: NotificationConfig) -> None:
+    def initWithConfig_(self, cfg: NotificationConfig) -> _QMANotificationDelegateWrapper:
         self.config = cfg
+        return self
 
     def userNotificationCenter_willPresentNotification_withCompletionHandler_(
         self,
@@ -107,6 +116,7 @@ class _QMANotificationDelegateWrapper(NSObject):
         notification: UNNotification,
         completionHandler: Callable[[UNNotificationPresentationOptions], None],
     ) -> None:
+        NSLog("willPresent: %@", notification)
         # TODO: allow for client code to customize this; here we are saying
         # "please present the notification to the user as a banner, even if we
         # are in the foreground".  We should allow for customization on a
@@ -123,12 +133,15 @@ class _QMANotificationDelegateWrapper(NSObject):
         """
         We received a response to a notification.
         """
+        NSLog("received notification repsonse %@", notificationResponse)
         # TODO: actually hook up the dispatch of the notification response to
         # the registry of action callbacks already set up in
         # NotificationConfig.
-        if isinstance(notificationResponse, UNTextInputNotificationResponse):
-            pass
-        completionHandler()
+        async def respond() -> None:
+            notifier = self.config._notifierByCategory(notificationResponse.notification().request().content().categoryIdentifier())
+            await notifier._handleResponse(notificationResponse)
+            completionHandler()
+        Deferred.fromCoroutine(respond()).addErrback(lambda error: NSLog("error: %@", error))
 
 
 def configureNotifications() -> AbstractAsyncContextManager[NotificationConfig]:
@@ -214,6 +227,20 @@ class Notifier[NotifT]:
     _hiddenPreviewsShowTitle: bool
     _hiddenPreviewsShowSubtitle: bool
 
+    def _getActionCB(self, actionID: str) -> Callable[[Any, UNNotificationResponse], Awaitable[None]]:
+        for (cb, eachActionID, action, options) in self._actionInfos:
+            if actionID == eachActionID:
+                return cb
+        raise KeyError(actionID)
+
+    async def _handleResponse(self, response: UNNotificationResponse) -> None:
+        userInfo = response.notification().request().content().userInfo()
+        actionID: str = response.actionIdentifier()
+        notificationID: str = response.notification().request().identifier()
+        cat = self._tx.fromNotification(notificationID, userInfo)
+        cb = self._getActionCB(actionID)
+        await cb(cat, response)
+
     def _createUNNotificationCategory(self) -> UNNotificationCategory:
         actions = []
         options = 0
@@ -224,7 +251,10 @@ class Notifier[NotifT]:
             actionToRegister,
             extraOptions,
         ) in self._actionInfos:
-            actions.append(actionToRegister)
+            options |= extraOptions
+            if actionToRegister is not None:
+                actions.append(actionToRegister)
+        NSLog("actions generated: %@ options: %@", actions, options)
 
         if self._allowInCarPlay:
             # Ha ha. Someday, maybe.
@@ -233,7 +263,7 @@ class Notifier[NotifT]:
             options |= UNNotificationCategoryOptionHiddenPreviewsShowTitle
         if self._hiddenPreviewsShowSubtitle:
             options |= UNNotificationCategoryOptionHiddenPreviewsShowSubtitle
-        UNNotificationCategory.categoryWithIdentifier_actions_intentIdentifiers_options_(
+        return UNNotificationCategory.categoryWithIdentifier_actions_intentIdentifiers_options_(
             self._notificationCategoryID,
             actions,
             [],
@@ -254,11 +284,10 @@ class Notifier[NotifT]:
         content.setTitle_(title)
         content.setBody_(body)
         content.setCategoryIdentifier_(self._notificationCategoryID)
+        content.setUserInfo_(userInfo)
 
         request = UNNotificationRequest.requestWithIdentifier_content_trigger_(
-            notificationID,
-            content,
-            trigger,
+            notificationID, content, trigger
         )
         d: Deferred[None] = Deferred()
 
@@ -268,7 +297,8 @@ class Notifier[NotifT]:
             d.callback(None)
 
         self._cfg._center.addNotificationRequest_withCompletionHandler_(
-            request, notificationRequestCompleted
+            request,
+            notificationRequestCompleted,
         )
         await d
 
@@ -344,6 +374,12 @@ class NotificationConfig:
         self._notifiers.append(notifier)
         return notifier
 
+    def _notifierByCategory(self, categoryID: str) -> Notifier[Any]:
+        for notifier in self._notifiers:
+            if categoryID == notifier._notificationCategoryID:
+                return notifier
+        raise KeyError(categoryID)
+
     def _register(self) -> None:
         self._center.setNotificationCategories_(
             [pynot._createUNNotificationCategory() for pynot in self._notifiers]
@@ -396,7 +432,7 @@ def _getAllActionInfos(t: type[object]) -> list[
     ]
 ]:
     result = []
-    for attr in dir(_getAllActionInfos):
+    for attr in dir(t):
         actionInfo = _getActionInfo(getattr(t, attr, None))
         if actionInfo is not None:
             result.append(actionInfo)
@@ -595,66 +631,3 @@ class response:
 
         return deco
 
-
-# ---- ^^^^^ framework cut here ^^^^^ ----
-
-
-@dataclass
-class category1:
-    notificationID: str
-    state: list[str]
-
-    @response.action(identifier="action1", title="First Action")
-    async def action1(self) -> None:
-        """
-        An action declared like so is a regular action that displays a button.
-        """
-
-    @response.text(
-        identifier="action2",
-        title="Text Action",
-        buttonTitle="Process Text",
-        textPlaceholder="hold place please",
-    )
-    async def action2(self, text: str) -> None:
-        """
-        An action that takes a C{text} argument is registered as a
-        L{UNTextInputNotificationAction}, and that text is passed along in
-        responses.
-        """
-
-    @response.default()
-    async def defaulted(self) -> None:
-        """
-        A user invoked the default response (i.e.: clicked on the
-        notification).
-        """
-
-    @response.dismiss()
-    async def dismiss(self) -> None:
-        """
-        A user dismissed this notification.
-        """
-
-
-@dataclass
-class ExampleTranslator:
-    txState: str
-
-    def fromNotification(self, notificationID: str, userData: PList) -> category1:
-        return category1(notificationID, userData)
-
-    def toNotification(self, notification: category1) -> tuple[str, PList]:
-        return (notification.notificationID, notification.state)
-
-
-async def setupNotificationsExample() -> None:
-    cat1txl = ExampleTranslator("hi")
-    async with configureNotifications() as n:
-        cat1notify = n.add(category1, cat1txl)
-    await cat1notify.notifyAt(
-        aware(datetime.now(ZoneInfo("US/Pacific")), ZoneInfo),
-        category1("just.testing", ["some", "words"]),
-        "Just Testing This Out",
-        "Here's The Notification",
-    )
