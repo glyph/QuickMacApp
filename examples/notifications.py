@@ -33,7 +33,7 @@ class category1:
         L{UNTextInputNotificationAction}, and that text is passed along in
         responses.
         """
-        await answer(f"got some text {text} {self.state}")
+        await answer(f"got some text\n{text}\n{self.state}")
 
     @response.default()
     async def defaulted(self) -> None:
@@ -41,14 +41,14 @@ class category1:
         A user invoked the default response (i.e.: clicked on the
         notification).
         """
-        await answer(f"defaulted {self.state}")
+        await answer(f"defaulted\n{self.state}")
 
     @response.dismiss()
     async def dismiss(self) -> None:
         """
         A user dismissed this notification.
         """
-        await answer(f"dismissed {self.state}")
+        await answer(f"dismissed\n{self.state}")
 
 
 @dataclass
@@ -56,10 +56,10 @@ class ExampleTranslator:
     txState: str
 
     def fromNotification(self, notificationID: str, userData: PList) -> category1:
-        return category1(notificationID, userData)
+        return category1(notificationID, userData["stateList"])
 
     def toNotification(self, notification: category1) -> tuple[str, PList]:
-        return (notification.notificationID, notification.state)
+        return (notification.notificationID, {"stateList": notification.state})
 
 
 async def setupNotifications() -> Notifier[category1]:

@@ -106,7 +106,9 @@ class _AppNotificationsCtxBuilder:
 class _QMANotificationDelegateWrapper(NSObject):
     config: NotificationConfig = object_property()
 
-    def initWithConfig_(self, cfg: NotificationConfig) -> _QMANotificationDelegateWrapper:
+    def initWithConfig_(
+        self, cfg: NotificationConfig
+    ) -> _QMANotificationDelegateWrapper:
         self.config = cfg
         return self
 
@@ -134,14 +136,23 @@ class _QMANotificationDelegateWrapper(NSObject):
         We received a response to a notification.
         """
         NSLog("received notification repsonse %@", notificationResponse)
+
         # TODO: actually hook up the dispatch of the notification response to
         # the registry of action callbacks already set up in
         # NotificationConfig.
         async def respond() -> None:
-            notifier = self.config._notifierByCategory(notificationResponse.notification().request().content().categoryIdentifier())
+            notifier = self.config._notifierByCategory(
+                notificationResponse.notification()
+                .request()
+                .content()
+                .categoryIdentifier()
+            )
             await notifier._handleResponse(notificationResponse)
             completionHandler()
-        Deferred.fromCoroutine(respond()).addErrback(lambda error: NSLog("error: %@", error))
+
+        Deferred.fromCoroutine(respond()).addErrback(
+            lambda error: NSLog("error: %@", error)
+        )
 
 
 def configureNotifications() -> AbstractAsyncContextManager[NotificationConfig]:
@@ -178,7 +189,10 @@ def configureNotifications() -> AbstractAsyncContextManager[NotificationConfig]:
     )
 
 
-type PList = Any
+type PList = dict[
+    str,
+    Any,
+]
 
 
 # framework
@@ -227,8 +241,10 @@ class Notifier[NotifT]:
     _hiddenPreviewsShowTitle: bool
     _hiddenPreviewsShowSubtitle: bool
 
-    def _getActionCB(self, actionID: str) -> Callable[[Any, UNNotificationResponse], Awaitable[None]]:
-        for (cb, eachActionID, action, options) in self._actionInfos:
+    def _getActionCB(
+        self, actionID: str
+    ) -> Callable[[Any, UNNotificationResponse], Awaitable[None]]:
+        for cb, eachActionID, action, options in self._actionInfos:
             if actionID == eachActionID:
                 return cb
         raise KeyError(actionID)
@@ -630,4 +646,3 @@ class response:
             return wrapt
 
         return deco
-
