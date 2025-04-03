@@ -318,6 +318,22 @@ class Notifier[NotifT]:
         )
         await d
 
+    def undeliver(self, notification: NotifT) -> None:
+        """
+        Remove the previously-delivered notification object from the
+        notification center, if it's still there.
+        """
+        notID, _ = self._tx.toNotification(notification)
+        self._cfg._center.removeDeliveredNotificationsWithIdentifiers_([notID])
+
+    def unsend(self, notification: NotifT) -> None:
+        """
+        Prevent the as-yet undelivered notification object from being
+        delivered.
+        """
+        notID, _ = self._tx.toNotification(notification)
+        self._cfg._center.removePendingNotificationRequestsWithIdentifiers_([notID])
+
     async def notifyAt(
         self, when: DateTime[ZoneInfo], notification: NotifT, title: str, body: str
     ) -> None:
@@ -377,7 +393,7 @@ class NotificationConfig:
 
         @param translator: a translator that can load and save a translator.
         """
-        catid: str = category.__name__
+        catid: str = f"{category.__module__}.{category.__qualname__}"
         notifier = Notifier(
             catid,
             self,

@@ -19,7 +19,7 @@ class category1:
         """
         An action declared like so is a regular action that displays a button.
         """
-        await answer(f"here's an answer! {self.state}")
+        await answer(f"{self.notificationID}\nhere's an answer! {self.state}")
 
     @response.text(
         identifier="action2",
@@ -33,7 +33,7 @@ class category1:
         L{UNTextInputNotificationAction}, and that text is passed along in
         responses.
         """
-        await answer(f"got some text\n{text}\n{self.state}")
+        await answer(f"{self.notificationID}\ngot some text\n{text}\n{self.state}")
 
     @response.default()
     async def defaulted(self) -> None:
@@ -41,14 +41,14 @@ class category1:
         A user invoked the default response (i.e.: clicked on the
         notification).
         """
-        await answer(f"defaulted\n{self.state}")
+        await answer(f"{self.notificationID}\ndefaulted\n{self.state}")
 
     @response.dismiss()
     async def dismiss(self) -> None:
         """
         A user dismissed this notification.
         """
-        await answer(f"dismissed\n{self.state}")
+        await answer(f"{self.notificationID}\ndismissed\n{self.state}")
 
 
 @dataclass
@@ -83,12 +83,21 @@ def app(reactor):
             await cat1notify.notifyAt(
                 aware(datetime.now(ZoneInfo("US/Pacific")), ZoneInfo),
                 category1(f"just.testing.{n}", ["some", "words"]),
-                "Just Testing This Out",
+                f"Just Testing This Out ({n})",
                 "Here's The Notification",
             )
 
+        async def doCancel()-> None:
+            cat1notify.undeliver(category1(f"just.testing.{n}", ["ignored"]))
+
         cat1notify = await setupNotifications()
-        s.menu([("Notify", lambda: Deferred.fromCoroutine(doNotify())), ("Quit", quit)])
+        s.menu(
+            [
+                ("Notify", lambda: Deferred.fromCoroutine(doNotify())),
+                ("Cancel", lambda: Deferred.fromCoroutine(doCancel())),
+                ("Quit", quit),
+            ]
+        )
 
     Deferred.fromCoroutine(stuff())
 
