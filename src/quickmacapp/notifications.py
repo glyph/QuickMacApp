@@ -152,32 +152,93 @@ class NotificationConfig(Protocol):
 
 def configureNotifications() -> _AbstractAsyncContextManager[NotificationConfig]:
     """
-    Configure notifications for the current application, in a context manager.
+    Configure notifications for the current application.
 
-    This is in a context manager to require the setup to happen at the end with
-    the given list of categories.  Use like so::
+    This is an asynchronous (using Twisted's Deferred) context manager, run
+    with `with` statement, which works like this::
 
-        class A:
+        async with configureNotifications() as cfg:
+            notifier = cfg.add(MyNotificationData, MyNotificationLoader())
+
+    Each L{add <NotificationConfig.add>} invocation adds a category of
+    notifications you can send, and returns an object (a L{Notifier}) that can
+    send that category of notification.
+
+    At the end of the C{async with} block, the notification configuration is
+    finalized, its state is sent to macOS, and the categories of notification
+    your application can send is frozen for the rest of the lifetime of your
+    process; the L{Notifier} objects returned from L{add
+    <NotificationConfig.add>} are now active nad can be used.  Note that you
+    may only call L{configureNotifications} once in your entire process, so you
+    will need to pass those notifiers elsewhere!
+
+    Each call to add requires 2 arguments: a notification-data class which
+    stores the sent notification's ID and any other ancillary data transmitted
+    along with it, and an object that can load and store that first class, when
+    notification responses from the operating system convey data that was
+    previously scheduled as a notification.  In our example above, they can be
+    as simple as this::
+
+        class MyNotificationData:
             id: str
 
+        class MyNotificationLoader:
+            def fromNotification(
+                self, notificationID: str, userData: dict[str, object]
+            ) -> MyNotificationData:
+                return MyNotificationData(notificationID)
+            def toNotification(
+                self,
+                notification: MyNotificationData,
+            ) -> tuple[str, dict[str, object]]:
+                return (notification.id, {})
+
+    Then, when you want to I{send} a notification, you can do::
+
+        await notifier.notifyAt(
+            aware(datetime.now(TZ) + timedelta(seconds=5), TZ),
+            MyNotificationData("my.notification.id.1"),
+            "Title Here",
+            "Subtitle Here",
+        )
+
+    And that will show the user a notification.
+
+    The C{MyNotificationData} class might seem simplistic to the point of
+    uselessness, and in this oversimplified case, it is!  However, if you are
+    sending notifications to a user, you really need to be able to I{respond}
+    to notifications from a user, and that's where your notification data class
+    as well as L{responder} comes in.  To respond to a notification when the
+    user clicks on it, you can add a method like so::
+
+        class MyNotificationData:
+            id: str
+
+            @response(identifier="response-action-1", title="Action 1")
+            async def responseAction1(self) -> None:
+                await answer("User pressed 'Action 1' button")
+
             @response.default()
-            async def activated(self) -> None:
-                print(f"user clicked {self.id}")
+            async def userClicked(self) -> None:
+                await answer("User clicked the notification.")
 
-        async def buildNotifiers(
-            appSpecificNotificationsDB: YourClass
-        ) -> tuple[Notifier[A], Notifier[B]]:
-            with configureNotifications() as cfg:
-                return (cfg.add(A, ATranslator(appSpecificNotificationsDB)),
-                        cfg.add(B, BTranslator(appSpecificNotificationsDB)))
+    When sent with L{Notifier.notifyAt}, your C{MyNotificationData} class will
+    be serialized and deserialized with C{MyNotificationLoader.toNotification}
+    (converting your Python class into a macOS notification, to send along to
+    the OS) and C{MyNotificationLoader.fromNotification} (converting the data
+    sent along with the user's response back into a L{MyNotificationData}).
 
-    and then in your application, in a startup hook like
-    applicationDidFinishLaunching_ or similar ::
-
-        def someSetupEvent_(whatever: NSObject) -> None:
-            async def setUpNotifications() -> None:
-                self.notifierA, self.notifierB = await buildNotifiers()
-            Deferred.fromCoroutine(setUpNotifications())
+    @note: If your app schedules a notification, then quits, when the user
+        responds (clicks on it, uses a button, dismisses it, etc) then the OS
+        will re-launch your application and send the notification data back in,
+        which is why all the serialization and deserialization is required.
+        Your process may have exited and thus the original notification will no
+        longer be around.  However, if you are just running as a Python script,
+        piggybacking on the 'Python Launcher' app bundle, macOS will not be
+        able to re-launch your app.  Notifications going back to the same
+        process seem to work okay, but note that as documented, macOS really
+        requires your application to have its own bundle and its own unique
+        CFBundleIdentifier in order to avoid any weird behavior.
     """
     return _AppNotificationsCtxBuilder(
         _UNUserNotificationCenter.currentNotificationCenter(), None
