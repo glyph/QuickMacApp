@@ -162,25 +162,18 @@ class _QMANotificationDelegateWrapper(NSObject):
         )
 
 
-type PList = dict[
-    str,
-    Any,
-]
-
-
-# framework
 class NotificationTranslator[T](Protocol):
     """
     Translate notifications from the notification ID and some user data,
     """
 
-    def fromNotification(self, notificationID: str, userData: PList) -> T:
+    def fromNotification(self, notificationID: str, userData: dict[str, Any]) -> T:
         """
         A user interacted with a notification with the given parameters;
         deserialize them into a Python object that can process that action.
         """
 
-    def toNotification(self, notification: T) -> tuple[str, PList]:
+    def toNotification(self, notification: T) -> tuple[str, dict[str, Any]]:
         """
         The application has requested to send a notification to the operating
         system, serialize the Python object represneting this category of

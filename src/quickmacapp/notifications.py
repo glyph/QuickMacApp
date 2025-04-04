@@ -19,7 +19,6 @@ from UserNotifications import (
 
 from quickmacapp._notifications import (
     NotificationTranslator,
-    PList,
     _BuiltinActionInfo,
     _PlainNotificationActionInfo,
     _setActionInfo,
@@ -29,7 +28,6 @@ from quickmacapp._notifications import (
 
 __all__ = [
     "NotificationTranslator",
-    "PList",
     "Action",
     "TextAction",
     "response",
