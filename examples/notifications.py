@@ -5,7 +5,7 @@ from datetype import aware
 from datetime import datetime
 from Foundation import NSLog
 from quickmacapp import Status, mainpoint, quit, answer
-from quickmacapp._notifications import Notifier, PList, configureNotifications, response
+from quickmacapp.notifications import Notifier, PList, configureNotifications, response
 from twisted.internet.defer import Deferred
 
 

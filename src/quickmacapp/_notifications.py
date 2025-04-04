@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from types import TracebackType
@@ -12,8 +11,6 @@ from Foundation import NSError, NSLog, NSObject, NSDateComponents
 from objc import object_property
 from twisted.internet.defer import Deferred
 from UserNotifications import (
-    UNNotificationDismissActionIdentifier,
-    UNNotificationDefaultActionIdentifier,
     UNNotificationCategoryOptions,
     UNAuthorizationOptionNone,
     UNMutableNotificationContent,
@@ -25,7 +22,6 @@ from UserNotifications import (
     UNNotificationActionOptionForeground,
     UNNotificationCategory,
     UNNotificationCategoryOptionAllowInCarPlay,
-    UNNotificationCategoryOptionCustomDismissAction,
     UNNotificationCategoryOptionHiddenPreviewsShowSubtitle,
     UNNotificationCategoryOptionHiddenPreviewsShowTitle,
     UNNotificationPresentationOptionBanner,
@@ -48,10 +44,10 @@ def make[T: NSObject](cls: type[T], **attributes: object) -> T:
 
 @dataclass
 class _AppNotificationsCtxBuilder:
-    center: UNUserNotificationCenter
-    cfg: NotificationConfig | None
+    _center: UNUserNotificationCenter
+    _cfg: _NotifConfigImpl | None
 
-    async def __aenter__(self) -> NotificationConfig:
+    async def __aenter__(self) -> _NotifConfigImpl:
         """
         Request authorization, then start building this notifications manager.
         """
@@ -66,7 +62,7 @@ class _AppNotificationsCtxBuilder:
             )
 
         NSLog("requesting authorization")
-        self.center.requestAuthorizationWithOptions_completionHandler_(
+        self._center.requestAuthorizationWithOptions_completionHandler_(
             UNAuthorizationOptionNone, completed
         )
         NSLog("requested")
@@ -78,11 +74,11 @@ class _AppNotificationsCtxBuilder:
             settingsDeferred.callback(settings)
 
         NSLog("requesting notification settings")
-        self.center.getNotificationSettingsWithCompletionHandler_(gotSettings)
+        self._center.getNotificationSettingsWithCompletionHandler_(gotSettings)
         settings = await settingsDeferred
         NSLog("initializing config")
-        self.cfg = NotificationConfig(
-            self.center,
+        self.cfg = _NotifConfigImpl(
+            self._center,
             [],
             _wasGrantedPermission=granted,
             _settings=settings,
@@ -97,12 +93,15 @@ class _AppNotificationsCtxBuilder:
         traceback: TracebackType | None,
         /,
     ) -> bool:
+        """
+        Finalize the set of notification categories and actions in use for this application.
+        """
         NSLog("async exit from ctx manager")
         if traceback is None and self.cfg is not None:
             qmandw = _QMANotificationDelegateWrapper.alloc().initWithConfig_(self.cfg)
             qmandw.retain()
             NSLog("Setting delegate! %@", qmandw)
-            self.center.setDelegate_(qmandw)
+            self._center.setDelegate_(qmandw)
             self.cfg._register()
         else:
             NSLog("NOT setting delegate!!!")
@@ -113,11 +112,10 @@ class _QMANotificationDelegateWrapper(NSObject):
     """
     UNUserNotificationCenterDelegate implementation.
     """
-    config: NotificationConfig = object_property()
 
-    def initWithConfig_(
-        self, cfg: NotificationConfig
-    ) -> _QMANotificationDelegateWrapper:
+    config: _NotifConfigImpl = object_property()
+
+    def initWithConfig_(self, cfg: _NotifConfigImpl) -> _QMANotificationDelegateWrapper:
         self.config = cfg
         return self
 
@@ -162,40 +160,6 @@ class _QMANotificationDelegateWrapper(NSObject):
         Deferred.fromCoroutine(respond()).addErrback(
             lambda error: NSLog("error: %@", error)
         )
-
-
-def configureNotifications() -> AbstractAsyncContextManager[NotificationConfig]:
-    """
-    Configure notifications for the current application, in a context manager.
-
-    This is in a context manager to require the setup to happen at the end with
-    the given list of categories.  Use like so::
-
-        class A:
-            id: str
-
-            @response.default()
-            async def activated(self) -> None:
-                print(f"user clicked {self.id}")
-
-        async def buildNotifiers(
-            appSpecificNotificationsDB: YourClass
-        ) -> tuple[Notifier[A], Notifier[B]]:
-            with configureNotifications() as cfg:
-                return (cfg.add(A, ATranslator(appSpecificNotificationsDB)),
-                        cfg.add(B, BTranslator(appSpecificNotificationsDB)))
-
-    and then in your application, in a startup hook like
-    applicationDidFinishLaunching_ or similar ::
-
-        def someSetupEvent_(whatever: NSObject) -> None:
-            async def setUpNotifications() -> None:
-                self.notifierA, self.notifierB = await buildNotifiers()
-            Deferred.fromCoroutine(setUpNotifications())
-    """
-    return _AppNotificationsCtxBuilder(
-        UNUserNotificationCenter.currentNotificationCenter(), None
-    )
 
 
 type PList = dict[
@@ -263,7 +227,7 @@ class Notifier[NotifT]:
 
     # Attributes:
     _notificationCategoryID: str
-    _cfg: NotificationConfig
+    _cfg: _NotifConfigImpl
     _tx: NotificationTranslator[NotifT]
     _actionInfos: list[_oneActionInfo]
     _allowInCarPlay: bool
@@ -331,33 +295,8 @@ class Notifier[NotifT]:
         NSLog("completed notification request with error %@", error)
 
 
-
-class Action[NotificationT](Protocol):
-    """
-    An action is just an async method that takes its C{self} (an instance of a
-    notification class encapsulating the ID & data), and reacts to the
-    specified action.
-    """
-
-    async def __call__(__no_self__, /, self: NotificationT) -> None:
-        """
-        React to the action.
-        """
-
-
-class TextAction[NotificationT](Protocol):
-    """
-    A L{TextAction} is just like an L{Action}, but it takes some text.
-    """
-
-    async def __call__(__no_self__, /, self: NotificationT, text: str) -> None:
-        """
-        React to the action with the user's input.
-        """
-
-
 @dataclass
-class NotificationConfig:
+class _NotifConfigImpl:
     _center: UNUserNotificationCenter
     _notifiers: list[Notifier[Any]]
     _wasGrantedPermission: bool
@@ -545,56 +484,3 @@ class _BuiltinActionInfo:
             return None
 
         return takesNotification
-
-
-@dataclass
-class response:
-    identifier: str
-    title: str
-    foreground: bool = False
-    destructive: bool = False
-    authenticationRequired: bool = False
-
-    def __call__[NT](self, action: Action[NT], /) -> Action[NT]:
-        return _setActionInfo(
-            action,
-            _PlainNotificationActionInfo(
-                identifier=self.identifier,
-                title=self.title,
-                foreground=self.foreground,
-                destructive=self.destructive,
-                authenticationRequired=self.authenticationRequired,
-            ),
-        )
-
-    def text[NT](
-        self, *, title: str | None = None, placeholder: str = ""
-    ) -> Callable[[TextAction[NT]], TextAction[NT]]:
-        return lambda wrapt: _setActionInfo(
-            wrapt,
-            _TextNotificationActionInfo(
-                identifier=self.identifier,
-                title=self.title,
-                buttonTitle=title if title is not None else self.title,
-                textPlaceholder=placeholder,
-                foreground=self.foreground,
-                destructive=self.destructive,
-                authenticationRequired=self.authenticationRequired,
-            ),
-        )
-
-    @staticmethod
-    def default[NT]() -> Callable[[Action[NT]], Action[NT]]:
-        return lambda wrapt: _setActionInfo(
-            wrapt, _BuiltinActionInfo(UNNotificationDefaultActionIdentifier, 0)
-        )
-
-    @staticmethod
-    def dismiss[NT]() -> Callable[[Action[NT]], Action[NT]]:
-        return lambda wrapt: _setActionInfo(
-            wrapt,
-            _BuiltinActionInfo(
-                UNNotificationDismissActionIdentifier,
-                UNNotificationCategoryOptionCustomDismissAction,
-            ),
-        )
