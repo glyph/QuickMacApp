@@ -14,19 +14,14 @@ class category1:
     notificationID: str
     state: list[str]
 
-    @response.action(identifier="action1", title="First Action")
+    @response(identifier="action1", title="First Action")
     async def action1(self) -> None:
         """
         An action declared like so is a regular action that displays a button.
         """
         await answer(f"{self.notificationID}\nhere's an answer! {self.state}")
 
-    @response.text(
-        identifier="action2",
-        title="Text Action",
-        buttonTitle="Process Text",
-        textPlaceholder="hold place please",
-    )
+    @response(identifier="action2", title="Text Action").text()
     async def action2(self, text: str) -> None:
         """
         An action that takes a C{text} argument is registered as a
@@ -87,7 +82,7 @@ def app(reactor):
                 "Here's The Notification",
             )
 
-        async def doCancel()-> None:
+        async def doCancel() -> None:
             cat1notify.undeliver(category1(f"just.testing.{n}", ["ignored"]))
 
         cat1notify = await setupNotifications()

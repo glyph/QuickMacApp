@@ -4,7 +4,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from types import TracebackType
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Any, Awaitable, Callable, Protocol, TypeAlias
 
 from datetype import DateTime
 
@@ -38,6 +38,12 @@ from UserNotifications import (
     UNTextInputNotificationAction,
     UNUserNotificationCenter,
 )
+
+
+def make[T: NSObject](cls: type[T], **attributes: object) -> T:
+    self: T = cls.alloc().init()
+    self.setValuesForKeysWithDictionary_(attributes)
+    return self
 
 
 @dataclass
@@ -104,6 +110,9 @@ class _AppNotificationsCtxBuilder:
 
 
 class _QMANotificationDelegateWrapper(NSObject):
+    """
+    UNUserNotificationCenterDelegate implementation.
+    """
     config: NotificationConfig = object_property()
 
     def initWithConfig_(
@@ -222,102 +231,7 @@ class Notifier[NotifT]:
     A notifier for a specific category.
     """
 
-    _notificationCategoryID: str
-    _cfg: NotificationConfig
-    _tx: NotificationTranslator[NotifT]
-    _actionInfos: list[
-        tuple[
-            # Action handler to stuff away into dispatch; does the pulling out
-            # of userText if necessary
-            Callable[[Any, UNNotificationResponse], Awaitable[None]],
-            # action ID
-            str,
-            # the notification action to register; None for default & dismiss
-            UNNotificationAction | None,
-            UNNotificationCategoryOptions,
-        ]
-    ]
-    _allowInCarPlay: bool
-    _hiddenPreviewsShowTitle: bool
-    _hiddenPreviewsShowSubtitle: bool
-
-    def _getActionCB(
-        self, actionID: str
-    ) -> Callable[[Any, UNNotificationResponse], Awaitable[None]]:
-        for cb, eachActionID, action, options in self._actionInfos:
-            if actionID == eachActionID:
-                return cb
-        raise KeyError(actionID)
-
-    async def _handleResponse(self, response: UNNotificationResponse) -> None:
-        userInfo = response.notification().request().content().userInfo()
-        actionID: str = response.actionIdentifier()
-        notificationID: str = response.notification().request().identifier()
-        cat = self._tx.fromNotification(notificationID, userInfo)
-        cb = self._getActionCB(actionID)
-        await cb(cat, response)
-
-    def _createUNNotificationCategory(self) -> UNNotificationCategory:
-        actions = []
-        options = 0
-
-        for (
-            responseHandlerCB,
-            actionID,
-            actionToRegister,
-            extraOptions,
-        ) in self._actionInfos:
-            options |= extraOptions
-            if actionToRegister is not None:
-                actions.append(actionToRegister)
-        NSLog("actions generated: %@ options: %@", actions, options)
-
-        if self._allowInCarPlay:
-            # Ha ha. Someday, maybe.
-            options |= UNNotificationCategoryOptionAllowInCarPlay
-        if self._hiddenPreviewsShowTitle:
-            options |= UNNotificationCategoryOptionHiddenPreviewsShowTitle
-        if self._hiddenPreviewsShowSubtitle:
-            options |= UNNotificationCategoryOptionHiddenPreviewsShowSubtitle
-        return UNNotificationCategory.categoryWithIdentifier_actions_intentIdentifiers_options_(
-            self._notificationCategoryID,
-            actions,
-            [],
-            options,
-        )
-
-    async def _notifyWithTrigger(
-        self,
-        trigger: UNNotificationTrigger,
-        notification: NotifT,
-        title: str,
-        body: str,
-    ) -> None:
-
-        notificationID, userInfo = self._tx.toNotification(notification)
-
-        content = UNMutableNotificationContent.alloc().init()
-        content.setTitle_(title)
-        content.setBody_(body)
-        content.setCategoryIdentifier_(self._notificationCategoryID)
-        content.setUserInfo_(userInfo)
-
-        request = UNNotificationRequest.requestWithIdentifier_content_trigger_(
-            notificationID, content, trigger
-        )
-        d: Deferred[None] = Deferred()
-
-        def notificationRequestCompleted(error: NSError | None) -> None:
-            # TODO: translate errors
-            NSLog("completed notification request with error %@", error)
-            d.callback(None)
-
-        self._cfg._center.addNotificationRequest_withCompletionHandler_(
-            request,
-            notificationRequestCompleted,
-        )
-        await d
-
+    # Public interface:
     def undeliver(self, notification: NotifT) -> None:
         """
         Remove the previously-delivered notification object from the
@@ -346,6 +260,76 @@ class Notifier[NotifT]:
             )
         )
         await self._notifyWithTrigger(trigger, notification, title, body)
+
+    # Attributes:
+    _notificationCategoryID: str
+    _cfg: NotificationConfig
+    _tx: NotificationTranslator[NotifT]
+    _actionInfos: list[_oneActionInfo]
+    _allowInCarPlay: bool
+    _hiddenPreviewsShowTitle: bool
+    _hiddenPreviewsShowSubtitle: bool
+
+    # Private implementation details:
+    async def _handleResponse(self, response: UNNotificationResponse) -> None:
+        userInfo = response.notification().request().content().userInfo()
+        actionID: str = response.actionIdentifier()
+        notificationID: str = response.notification().request().identifier()
+        cat = self._tx.fromNotification(notificationID, userInfo)
+        for cb, eachActionID, action, options in self._actionInfos:
+            if actionID == eachActionID:
+                break
+        else:
+            raise KeyError(actionID)
+        await cb(cat, response)
+
+    def _createUNNotificationCategory(self) -> UNNotificationCategory:
+        actions = []
+        # We don't yet support intent identifiers.
+        intentIdentifiers: list[str] = []
+        options = 0
+        for handler, actionID, toRegister, extraOptions in self._actionInfos:
+            options |= extraOptions
+            if toRegister is not None:
+                actions.append(toRegister)
+        NSLog("actions generated: %@ options: %@", actions, options)
+        if self._allowInCarPlay:
+            # Ha ha. Someday, maybe.
+            options |= UNNotificationCategoryOptionAllowInCarPlay
+        if self._hiddenPreviewsShowTitle:
+            options |= UNNotificationCategoryOptionHiddenPreviewsShowTitle
+        if self._hiddenPreviewsShowSubtitle:
+            options |= UNNotificationCategoryOptionHiddenPreviewsShowSubtitle
+        return UNNotificationCategory.categoryWithIdentifier_actions_intentIdentifiers_options_(
+            self._notificationCategoryID, actions, intentIdentifiers, options
+        )
+
+    async def _notifyWithTrigger(
+        self,
+        trigger: UNNotificationTrigger,
+        notification: NotifT,
+        title: str,
+        body: str,
+    ) -> None:
+        notificationID, userInfo = self._tx.toNotification(notification)
+        request = UNNotificationRequest.requestWithIdentifier_content_trigger_(
+            notificationID,
+            make(
+                UNMutableNotificationContent,
+                title=title,
+                body=body,
+                categoryIdentifier=self._notificationCategoryID,
+                userInfo=userInfo,
+            ),
+            trigger,
+        )
+        d: Deferred[NSError | None] = Deferred()
+        self._cfg._center.addNotificationRequest_withCompletionHandler_(
+            request, d.callback
+        )
+        error = await d
+        NSLog("completed notification request with error %@", error)
+
 
 
 class Action[NotificationT](Protocol):
@@ -418,30 +402,28 @@ class NotificationConfig:
         )
 
 
-ACTION_INFO_ATTR = "__qma_notification_action_info__"
+_ACTION_INFO_ATTR = "__qma_notification_action_info__"
 
 
-def _getActionInfo(
-    o: object,
-) -> (
-    tuple[
-        # Action handler to stuff away into dispatch; does the pulling out of
-        # userText if necessary
-        Callable[[Any, UNNotificationResponse], Awaitable[None]],
-        # action ID
-        str,
-        # the notification action to register; None for default & dismiss
-        UNNotificationAction | None,
-        UNNotificationCategoryOptions,
-    ]
-    | None
-):
-    handler: (
-        _PlainNotificationActionInfo
-        | _TextNotificationActionInfo
-        | _BuiltinActionInfo
-        | None
-    ) = getattr(o, ACTION_INFO_ATTR, None)
+_oneActionInfo = tuple[
+    # Action handler to stuff away into dispatch; does the pulling out of
+    # userText if necessary
+    Callable[[Any, UNNotificationResponse], Awaitable[None]],
+    # action ID
+    str,
+    # the notification action to register; None for default & dismiss
+    UNNotificationAction | None,
+    UNNotificationCategoryOptions,
+]
+
+
+_anyActionInfo: TypeAlias = (
+    "_PlainNotificationActionInfo | _TextNotificationActionInfo | _BuiltinActionInfo"
+)
+
+
+def _getActionInfo(o: object) -> _oneActionInfo | None:
+    handler: _anyActionInfo | None = getattr(o, _ACTION_INFO_ATTR, None)
     if handler is None:
         return None
     appCallback: Any = o
@@ -451,18 +433,12 @@ def _getActionInfo(
     return (callback, actionID, handler._toAction(), extraOptions)
 
 
-def _getAllActionInfos(t: type[object]) -> list[
-    tuple[
-        # Action handler to stuff away into dispatch; does the pulling out of
-        # userText if necessary
-        Callable[[Any, UNNotificationResponse], Awaitable[None]],
-        # action ID
-        str,
-        # the notification action to register; None for default & dismiss
-        UNNotificationAction | None,
-        UNNotificationCategoryOptions,
-    ]
-]:
+def _setActionInfo[T](wrapt: T, actionInfo: _anyActionInfo) -> T:
+    setattr(wrapt, _ACTION_INFO_ATTR, actionInfo)
+    return wrapt
+
+
+def _getAllActionInfos(t: type[object]) -> list[_oneActionInfo]:
     result = []
     for attr in dir(t):
         actionInfo = _getActionInfo(getattr(t, attr, None))
@@ -571,94 +547,54 @@ class _BuiltinActionInfo:
         return takesNotification
 
 
+@dataclass
 class response:
-    """
-    Namespace for response declarations.
-    """
+    identifier: str
+    title: str
+    foreground: bool = False
+    destructive: bool = False
+    authenticationRequired: bool = False
+
+    def __call__[NT](self, action: Action[NT], /) -> Action[NT]:
+        return _setActionInfo(
+            action,
+            _PlainNotificationActionInfo(
+                identifier=self.identifier,
+                title=self.title,
+                foreground=self.foreground,
+                destructive=self.destructive,
+                authenticationRequired=self.authenticationRequired,
+            ),
+        )
+
+    def text[NT](
+        self, *, title: str | None = None, placeholder: str = ""
+    ) -> Callable[[TextAction[NT]], TextAction[NT]]:
+        return lambda wrapt: _setActionInfo(
+            wrapt,
+            _TextNotificationActionInfo(
+                identifier=self.identifier,
+                title=self.title,
+                buttonTitle=title if title is not None else self.title,
+                textPlaceholder=placeholder,
+                foreground=self.foreground,
+                destructive=self.destructive,
+                authenticationRequired=self.authenticationRequired,
+            ),
+        )
 
     @staticmethod
-    def action[NotificationT](
-        *,
-        identifier: str,
-        title: str,
-        foreground: bool = False,
-        destructive: bool = False,
-        authenticationRequired: bool = False,
-    ) -> Callable[[Action[NotificationT]], Action[NotificationT]]:
-        def deco(wrapt: Action[NotificationT]) -> Action[NotificationT]:
-            setattr(
-                wrapt,
-                ACTION_INFO_ATTR,
-                _PlainNotificationActionInfo(
-                    identifier=identifier,
-                    title=title,
-                    foreground=foreground,
-                    destructive=destructive,
-                    authenticationRequired=authenticationRequired,
-                ),
-            )
-            return wrapt
-
-        return deco
+    def default[NT]() -> Callable[[Action[NT]], Action[NT]]:
+        return lambda wrapt: _setActionInfo(
+            wrapt, _BuiltinActionInfo(UNNotificationDefaultActionIdentifier, 0)
+        )
 
     @staticmethod
-    def text[NotificationT](
-        *,
-        identifier: str,
-        title: str,
-        buttonTitle: str,
-        textPlaceholder: str,
-        foreground: bool = False,
-        destructive: bool = False,
-        authenticationRequired: bool = False,
-    ) -> Callable[[TextAction[NotificationT]], TextAction[NotificationT]]:
-        def deco(wrapt: TextAction[NotificationT]) -> TextAction[NotificationT]:
-            setattr(
-                wrapt,
-                ACTION_INFO_ATTR,
-                _TextNotificationActionInfo(
-                    identifier=identifier,
-                    title=title,
-                    buttonTitle=buttonTitle,
-                    textPlaceholder=textPlaceholder,
-                    foreground=foreground,
-                    destructive=destructive,
-                    authenticationRequired=authenticationRequired,
-                ),
-            )
-            return wrapt
-
-        return deco
-
-    @staticmethod
-    def default[NotificationT]() -> (
-        Callable[[Action[NotificationT]], Action[NotificationT]]
-    ):
-        # UNNotificationDefaultActionIdentifier
-        def deco(wrapt: Action[NotificationT]) -> Action[NotificationT]:
-            setattr(
-                wrapt,
-                ACTION_INFO_ATTR,
-                _BuiltinActionInfo(UNNotificationDefaultActionIdentifier, 0),
-            )
-            return wrapt
-
-        return deco
-
-    @staticmethod
-    def dismiss[NotificationT]() -> (
-        Callable[[Action[NotificationT]], Action[NotificationT]]
-    ):
-        # UNNotificationDismissActionIdentifier
-        def deco(wrapt: Action[NotificationT]) -> Action[NotificationT]:
-            setattr(
-                wrapt,
-                ACTION_INFO_ATTR,
-                _BuiltinActionInfo(
-                    UNNotificationDismissActionIdentifier,
-                    UNNotificationCategoryOptionCustomDismissAction,
-                ),
-            )
-            return wrapt
-
-        return deco
+    def dismiss[NT]() -> Callable[[Action[NT]], Action[NT]]:
+        return lambda wrapt: _setActionInfo(
+            wrapt,
+            _BuiltinActionInfo(
+                UNNotificationDismissActionIdentifier,
+                UNNotificationCategoryOptionCustomDismissAction,
+            ),
+        )
