@@ -177,7 +177,7 @@ class QuickApplication(NSApplication):
     """
     QuickMacApp's main application class.
 
-    @ivar keyEquivalentHandler: Set this attribute to a custom L{NSResponder}
+    @ivar keyEquivalentHandler: Set this attribute to a custom C{NSResponder}
         if you want to handle key equivalents outside the responder chain.  (I
         believe this is necessary in some apps because the responder chain can
         be more complicated in LSUIElement apps, but there might be a better

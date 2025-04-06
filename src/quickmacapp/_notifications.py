@@ -177,7 +177,7 @@ class NotificationTranslator[T](Protocol):
         The application has requested to send a notification to the operating
         system, serialize the Python object represneting this category of
         notification into a 2-tuple of C{notificatcionID}, C{userData} that can
-        be encapsulated in a L{UNNotificationRequest}.
+        be encapsulated in a C{UNNotificationRequest}.
         """
 
 

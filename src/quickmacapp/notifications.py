@@ -161,7 +161,7 @@ class NotificationConfig(Protocol):
             its responses (e.g. the response methods on the category).
 
         @param translator: a translator that can serialize and deserialize
-            python objects to L{UNUserNotificationCenter} values.
+            python objects to C{UNUserNotificationCenter} values.
 
         @param allowInCarPlay: Should the notification be allowed to show in
             CarPlay?
@@ -239,7 +239,7 @@ def configureNotifications() -> _AbstractAsyncContextManager[NotificationConfig]
     uselessness, and in this oversimplified case, it is!  However, if you are
     sending notifications to a user, you really need to be able to I{respond}
     to notifications from a user, and that's where your notification data class
-    as well as L{responder} comes in.  To respond to a notification when the
+    as well as L{response} comes in.  To respond to a notification when the
     user clicks on it, you can add a method like so::
 
         class MyNotificationData:
@@ -257,7 +257,7 @@ def configureNotifications() -> _AbstractAsyncContextManager[NotificationConfig]
     be serialized and deserialized with C{MyNotificationLoader.toNotification}
     (converting your Python class into a macOS notification, to send along to
     the OS) and C{MyNotificationLoader.fromNotification} (converting the data
-    sent along with the user's response back into a L{MyNotificationData}).
+    sent along with the user's response back into a C{MyNotificationData}).
 
     @note: If your app schedules a notification, then quits, when the user
         responds (clicks on it, uses a button, dismisses it, etc) then the OS

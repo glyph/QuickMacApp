@@ -50,7 +50,7 @@ hyperframe==6.1.0
     # via h2
 hyperlink==21.0.0
     # via twisted
-hypothesis==6.129.4
+hypothesis==6.130.8
     # via twisted
 idna==3.10
     # via
@@ -66,7 +66,7 @@ pyasn1==0.6.1
     # via
     #   pyasn1-modules
     #   service-identity
-pyasn1-modules==0.4.1
+pyasn1-modules==0.4.2
     # via service-identity
 pycparser==2.22
     # via cffi
@@ -104,7 +104,7 @@ sortedcontainers==2.4.0
     # via hypothesis
 twisted==24.11.0
     # via quickmacapp (pyproject.toml)
-typing-extensions==4.12.2
+typing-extensions==4.13.1
     # via twisted
 zope-interface==7.2
     # via twisted
