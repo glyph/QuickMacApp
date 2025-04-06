@@ -139,6 +139,9 @@ class Notifier[NotifT](Protocol):
 
 
 class NotificationConfig(Protocol):
+    """
+    The application-wide configuration for a notification.
+    """
 
     def add[NotifT](
         self,
@@ -147,7 +150,35 @@ class NotificationConfig(Protocol):
         allowInCarPlay: bool = False,
         hiddenPreviewsShowTitle: bool = False,
         hiddenPreviewsShowSubtitle: bool = False,
-    ) -> Notifier[NotifT]: ...
+    ) -> Notifier[NotifT]:
+        """
+        Add a new category (represented by a plain Python class, which may have
+        some methods that were decorated with L{response}C{(...)},
+        L{response.text}C{(...)}).
+
+        @param category: A Python type that contains the internal state for the
+            notifications that will be emitted, that will be relayed back to
+            its responses (e.g. the response methods on the category).
+
+        @param translator: a translator that can serialize and deserialize
+            python objects to L{UNUserNotificationCenter} values.
+
+        @param allowInCarPlay: Should the notification be allowed to show in
+            CarPlay?
+
+        @param hiddenPreviewsShowTitle: Should lock-screen previews for this
+            notification show the unredacted title?
+
+        @param hiddenPreviewsShowSubtitle: Should lock-screen previews for this
+            notification show the unredacted subtitle?
+
+        @return: A L{Notifier} that can deliver notifications to macOS.
+
+        @note: This method can I{only} be called within the C{with} statement
+            for the context manager beneath C{configureNotifications}, and can
+            only do this once per process.  Otherwise it will raise an
+            exception.
+        """
 
 
 def configureNotifications() -> _AbstractAsyncContextManager[NotificationConfig]:
