@@ -6,7 +6,15 @@ from typing import Any, Awaitable, Callable, Protocol, TypeAlias
 from zoneinfo import ZoneInfo
 
 from datetype import DateTime
-from Foundation import NSDateComponents, NSError, NSLog, NSObject
+from Foundation import (
+    NSTimeZone,
+    NSDateComponents,
+    NSError,
+    NSLog,
+    NSObject,
+    NSCalendar,
+    NSCalendarIdentifierGregorian,
+)
 from objc import object_property
 from twisted.internet.defer import Deferred
 from UserNotifications import (
@@ -207,7 +215,19 @@ class Notifier[NotifT]:
     async def notifyAt(
         self, when: DateTime[ZoneInfo], notification: NotifT, title: str, body: str
     ) -> None:
+
         components: NSDateComponents = NSDateComponents.alloc().init()
+        components.setCalendar_(
+            NSCalendar.calendarWithIdentifier_(NSCalendarIdentifierGregorian)
+        )
+        components.setTimeZone_(NSTimeZone.timeZoneWithName_(when.tzinfo.key))
+        components.setYear_(when.year)
+        components.setMonth_(when.month)
+        components.setDay_(when.day)
+        components.setHour_(when.hour)
+        components.setMinute_(when.minute)
+        components.setSecond_(when.second)
+
         repeats: bool = False
         trigger: UNNotificationTrigger = (
             UNCalendarNotificationTrigger.triggerWithDateMatchingComponents_repeats_(

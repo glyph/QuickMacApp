@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 from datetype import aware
-from datetime import datetime
+from datetime import datetime, timedelta
 from quickmacapp import Status, mainpoint, quit, answer
 from quickmacapp.notifications import Notifier, configureNotifications, response
 from twisted.internet.defer import Deferred
@@ -58,7 +58,8 @@ def app(reactor):
             nonlocal n
             n += 1
             await cat1notify.notifyAt(
-                aware(datetime.now(ZoneInfo("US/Pacific")), ZoneInfo),
+                aware(datetime.now(ZoneInfo("US/Pacific")), ZoneInfo)
+                + timedelta(seconds=5),
                 category1(f"just.testing.{n}", ["some", "words"]),
                 f"Just Testing This Out ({n})",
                 "Here's The Notification",
