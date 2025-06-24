@@ -3,31 +3,48 @@ from __future__ import annotations
 import os
 import sys
 import traceback
-from typing import Callable, Protocol, Any
-
-from objc import ivar, IBAction, super
-
-from Foundation import (
-    NSObject,
-    NSException,
-)
+from dataclasses import dataclass
+from types import FunctionType
+from typing import Any, Callable, Iterable, Protocol, Sequence, Literal
 
 from AppKit import (
     NSApp,
     NSApplication,
     NSEvent,
-    NSResponder,
-    NSMenu,
     NSImage,
+    NSMenu,
     NSMenuItem,
+    NSResponder,
     NSStatusBar,
     NSVariableStatusItemLength,
+    NSControlStateValueOn,
+    NSControlStateValueOff,
 )
-
+from ExceptionHandling import NSStackTraceKey  # type:ignore
+from Foundation import NSException, NSObject
+from objc import IBAction, ivar, super
 from PyObjCTools.Debugging import _run_atos, isPythonException
-from ExceptionHandling import (  # type:ignore
-    NSStackTraceKey,
-)
+
+
+def asSelectorString(f: FunctionType) -> str:
+    """
+    Convert a method on a PyObjC class into a selector string.
+    """
+    return f.__name__.replace("_", ":")
+
+
+@dataclass(kw_only=True)
+class ItemState:
+    """
+    The state of a menu item.
+    """
+
+    enabled: bool = True
+    "Should the menu item be disabled? True if not, False if so."
+    checked: bool = False
+    "Should the menu item display a check-mark next to itself? True if so, False if not."
+    key: str | None = None
+    "Should the menu shortcut mnemonic key be set, blank, or derived from the item's title?"
 
 
 class Actionable(NSObject):
@@ -35,15 +52,20 @@ class Actionable(NSObject):
     Wrap a Python no-argument function call in an NSObject with a C{doIt:}
     method.
     """
-    _thunk: Callable[[], None]
 
-    def initWithFunction_(self, thunk: Callable[[], None]) -> Actionable:
+    _thunk: Callable[[], object]
+    _state: ItemState
+
+    def initWithFunction_andState_(
+        self, thunk: Callable[[], None], state: ItemState
+    ) -> Actionable:
         """
         Remember the given callable.
 
         @param thunk: the callable to run in L{doIt_}.
         """
         self._thunk = thunk
+        self._state = state
         return self
 
     @IBAction
@@ -52,10 +74,41 @@ class Actionable(NSObject):
         Call the given callable; exposed as an C{IBAction} in case you want IB
         to be able to see it.
         """
-        self._thunk()
+        result = self._thunk()
+        if isinstance(result, ItemState):
+            self._state = result
+
+    def validateMenuItem_(self, item: NSMenuItem) -> bool:
+        item.setState_(
+            NSControlStateValueOn if self._state.checked else NSControlStateValueOff
+        )
+        return self._state.enabled
 
 
-def menu(title: str, items: list[tuple[str, Callable[[], object]]]) -> NSMenu:
+ACTION_METHOD = asSelectorString(Actionable.doIt_)
+
+
+def _adjust(
+    items: Iterable[
+        tuple[str, Callable[[], object]] | tuple[str, Callable[[], object], ItemState]
+    ],
+) -> Iterable[tuple[str, Callable[[], object], ItemState]]:
+    for item in items:
+        if len(item) == 3:
+            yield item
+        else:
+            yield (*item, ItemState())
+
+
+ItemSeq = Sequence[
+    tuple[str, Callable[[], object]] | tuple[str, Callable[[], object], ItemState]
+]
+
+
+def menu(
+    title: str,
+    items: ItemSeq,
+) -> NSMenu:
     """
     Construct an NSMenu from a list of tuples describing it.
 
@@ -68,11 +121,16 @@ def menu(title: str, items: list[tuple[str, Callable[[], object]]]) -> NSMenu:
     @return: a new Menu tha is not attached to anything.
     """
     result = NSMenu.alloc().initWithTitle_(title)
-    for (subtitle, thunk) in items:
+    for subtitle, thunk, state in _adjust(items):
+        initialKeyEquivalent = subtitle[0].lower()
         item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            subtitle, "doIt:", subtitle[0].lower()
+            subtitle,
+            ACTION_METHOD,
+            initialKeyEquivalent if state.key is None else state.key,
         )
-        item.setTarget_(Actionable.alloc().initWithFunction_(thunk).retain())
+        item.setTarget_(
+            Actionable.alloc().initWithFunction_andState_(thunk, state).retain()
+        )
         result.addItem_(item)
     result.update()
     return result
@@ -97,11 +155,12 @@ class Status:
             self.item.button().setImage_(image)
         elif text is None:
             from __main__ import __file__ as default
+
             text = os.path.basename(default)
         if text is not None:
             self.item.button().setTitle_(text)
 
-    def menu(self, items: list[tuple[str, Callable[[], object]]]) -> None:
+    def menu(self, items: ItemSeq) -> None:
         """
         Set the status drop-down menu.
 
@@ -183,6 +242,7 @@ class QuickApplication(NSApplication):
         be more complicated in LSUIElement apps, but there might be a better
         way to do this.)
     """
+
     keyEquivalentHandler: NSResponder = ivar()
 
     def sendEvent_(self, event: NSEvent) -> None:
@@ -210,6 +270,7 @@ class MainRunner(Protocol):
     """
     A function which has been decorated with a runMain attribute.
     """
+
     def __call__(self, reactor: Any) -> None:
         """
         @param reactor: A Twisted reactor, which provides the usual suspects of
@@ -217,6 +278,7 @@ class MainRunner(Protocol):
         """
 
     runMain: Callable[[], None]
+
 
 def mainpoint() -> Callable[[Callable[[Any], None]], MainRunner]:
     """
@@ -227,10 +289,11 @@ def mainpoint() -> Callable[[Callable[[Any], None]], MainRunner]:
         The runMain attribute starts a reactor and calls the original function
         with a running, initialized, reactor.
     """
+
     def wrapup(appmain: Callable[[Any], None]) -> MainRunner:
         def doIt() -> None:
-            from twisted.internet import cfreactor
             import PyObjCTools.AppHelper
+            from twisted.internet import cfreactor
 
             QuickApplication.sharedApplication()
 
