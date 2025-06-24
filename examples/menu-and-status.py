@@ -1,10 +1,12 @@
 from __future__ import annotations
-import pathlib
+
 import os
+import pathlib
 
 import AppKit
+from quickmacapp import Status, mainpoint
+from twisted.internet.interfaces import IReactorTime
 
-from quickmacapp import mainpoint, Status
 
 @mainpoint()
 def app(reactor: IReactorTime) -> None:
