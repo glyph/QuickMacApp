@@ -56,13 +56,22 @@ class Actionable(NSObject):
     _thunk: Callable[[], object]
     _state: ItemState
 
+    def initWithFunction_(self, thunk: Callable[[], None]) -> Actionable:
+        """
+        Backwards compatibility initializer, creating this L{Actionable} in the
+        default L{ItemState}.
+        """
+        return self.initWithFunction_andState_(thunk, ItemState())
+
     def initWithFunction_andState_(
         self, thunk: Callable[[], None], state: ItemState
     ) -> Actionable:
         """
-        Remember the given callable.
+        Remember the given callable, and the given menu state.
 
         @param thunk: the callable to run in L{doIt_}.
+
+        @param state: the initial state of the menu item presentation
         """
         self._thunk = thunk
         self._state = state
