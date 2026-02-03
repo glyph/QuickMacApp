@@ -1,6 +1,6 @@
-from typing import Any, Callable
-
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from typing import Any, Callable, Iterator, Protocol, ContextManager
 
 from AppKit import (
     NSApplication,
@@ -21,6 +21,18 @@ from AppKit import (
 )
 
 
+class DockIconManager(Protocol):
+    """
+    Methods for managing the background dock icon status.
+    """
+
+    def noDockIcon(self) -> ContextManager[None]:
+        """
+        Temporarily suppress the application foregrounding with a dock icon,
+        for example, while displaying a brief popup.
+        """
+
+
 @dataclass
 class SometimesBackground:
     """
@@ -35,12 +47,27 @@ class SometimesBackground:
     onSpaceChange: Callable[[], None]
     currentlyRegular: bool = False
     previouslyActiveApp: NSRunningApplication = field(init=False)
+    suppressed: bool = False
+
+    @contextmanager
+    def noDockIcon(self) -> Iterator[None]:
+        """
+        For the duration of this contextmanager, don't show the dock icon or show the main window.
+        """
+        self.suppressed = True
+        try:
+            yield None
+        finally:
+            self.suppressed = False
 
     def someApplicationActivated_(self, notification: Any) -> None:
         # NSLog(f"active {notification} {__file__}")
         whichApp = notification.userInfo()[NSWorkspaceApplicationKey]
 
-        if whichApp == NSRunningApplication.currentApplication():
+        if (
+            whichApp == NSRunningApplication.currentApplication()
+            and not self.suppressed
+        ):
             if self.currentlyRegular:
                 # NSLog("show editor window")
                 self.mainWindow.setIsVisible_(True)
@@ -89,7 +116,9 @@ class SometimesBackground:
                 NSLog("I am not on the active space, closing the window")
                 self.mainWindow.close()
             else:
-                NSLog("I am not on the active space, but that's OK, leaving window open.")
+                NSLog(
+                    "I am not on the active space, but that's OK, leaving window open."
+                )
         else:
             NSLog("I am on the active space; not closing.")
         self.onSpaceChange()
@@ -143,7 +172,7 @@ def dockIconWhenVisible(
     mainWindow: NSWindow,
     hideIconOnOtherSpaces: bool = True,
     onSpaceChange: Callable[[], None] = lambda: None,
-):
+) -> DockIconManager:
     """
     When the given main window is visible, we should have a dock icon (i.e.: be
     NSApplicationActivationPolicyRegular).  When our application is activated,
@@ -152,4 +181,6 @@ def dockIconWhenVisible(
     then closed, or when our application is hidden, we should hide our dock
     icon (i.e.: be NSApplicationActivationPolicyAccessory).
     """
-    SometimesBackground(mainWindow, hideIconOnOtherSpaces, onSpaceChange).startObserving()
+    background = SometimesBackground(mainWindow, hideIconOnOtherSpaces, onSpaceChange)
+    background.startObserving()
+    return background
