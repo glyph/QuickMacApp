@@ -58,17 +58,20 @@ class SometimesBackground:
         self.suppressed = True
         try:
             yield None
+            self.previouslyActiveApp.activateWithOptions_(
+                NSApplicationActivateIgnoringOtherApps
+            )
         finally:
             self.suppressed = False
 
     def someApplicationActivated_(self, notification: Any) -> None:
         # NSLog(f"active {notification} {__file__}")
+
         whichApp = notification.userInfo()[NSWorkspaceApplicationKey]
 
-        if (
-            whichApp == NSRunningApplication.currentApplication()
-            and not self.suppressed
-        ):
+        if whichApp == NSRunningApplication.currentApplication():
+            if self.suppressed:
+                return
             if self.currentlyRegular:
                 # NSLog("show editor window")
                 self.mainWindow.setIsVisible_(True)
