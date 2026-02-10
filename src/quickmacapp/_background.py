@@ -52,7 +52,8 @@ class SometimesBackground:
     @contextmanager
     def noDockIcon(self) -> Iterator[None]:
         """
-        For the duration of this contextmanager, don't show the dock icon or show the main window.
+        For the duration of this contextmanager, don't show the dock icon or
+        show the main window.
         """
         self.suppressed = True
         try:
