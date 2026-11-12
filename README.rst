@@ -1,5 +1,5 @@
 QuickMacApp
-==============================
+===========
 
 .. note::
 
@@ -29,3 +29,8 @@ Packaging this into a working app bundle is currently left as an exercise for
 the reader.
 
 This was originally extracted from https://github.com/glyph/Pomodouroboros/
+
+AI Policy
+---------
+
+QuickMacApp follows the `Twisted AI Policy <https://docs.twisted.org/en/latest/development/ai-policy.html>`_. This means this project does not allow the inclusion of the outputs of generative AI tools.
